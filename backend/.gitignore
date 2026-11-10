@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv/
+env/
+venv/
+.cache/
+*.wav
+*.mp3
+.pytest_cache/
+

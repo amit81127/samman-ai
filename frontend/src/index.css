@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #F5F8FA;
+  color: #17283D;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-purple text-white px-5 py-2.5 rounded-btn font-semibold text-sm hover:bg-purple-hover transition-colors duration-200 inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed select-none;
+  }
+  .btn-secondary {
+    @apply bg-white text-navy border border-border px-5 py-2.5 rounded-btn font-semibold text-sm hover:bg-bg transition-colors duration-200 inline-flex items-center gap-2 select-none;
+  }
+  .card {
+    @apply bg-surface rounded-card shadow-card border border-border;
+  }
+  .input {
+    @apply w-full border border-border rounded-btn px-4 py-2.5 text-sm text-navy focus:outline-none focus:ring-2 focus:ring-purple/30 focus:border-purple transition bg-white;
+  }
+}
+
+/* Accessibility Modes */
+html.high-contrast {
+  filter: contrast(125%);
+}
+
+html.high-contrast body {
+  background-color: #ECEFF3;
+}
+
+html.high-contrast .card {
+  border-width: 2px;
+  border-color: #0F172A;
+}
+
+html.reduced-motion * {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Text Size Preferences */
+html.text-size-large body {
+  font-size: 1.08rem;
+}
+
+html.text-size-extra body {
+  font-size: 1.18rem;
+}
+
+/* Tile Size Preferences */
+html.tile-size-small .aspect-square {
+  min-height: 4.5rem;
+}
+
+html.tile-size-medium .aspect-square {
+  min-height: 5.5rem;
+}
+
+html.tile-size-large .aspect-square {
+  min-height: 6.8rem;
+}
