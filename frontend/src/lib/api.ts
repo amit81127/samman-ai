@@ -3,12 +3,18 @@
  * Coordinates all REST calls to the FastAPI backend at /api/v1
  */
 
-const BASE_URL = '/api/v1'
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '')
+const BASE_URL = BACKEND_URL ? `${BACKEND_URL}/api/v1` : '/api/v1'
 
 interface RequestOptions {
   method?: string
   body?: unknown
   headers?: Record<string, string>
+}
+
+function resolveUrl(path: string): string {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  return `${BASE_URL}${cleanPath}`
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -20,7 +26,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     requestHeaders['Content-Type'] = 'application/json'
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const response = await fetch(resolveUrl(path), {
     method,
     credentials: 'include',
     headers: requestHeaders,
@@ -61,7 +67,7 @@ export const api = {
 
   /** For speech synthesis endpoint which returns audio/wav */
   getAudioBlob: async (path: string, body?: unknown): Promise<Blob> => {
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(resolveUrl(path), {
       method: 'POST',
       credentials: 'include',
       headers: body ? { 'Content-Type': 'application/json' } : {},
