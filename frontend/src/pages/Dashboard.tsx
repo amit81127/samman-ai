@@ -79,6 +79,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function loadRecentMessages() {
+      if (!user) return
       try {
         const data = await api.get<ApprovedMessage[]>('/messages')
         if (Array.isArray(data)) {
@@ -92,7 +93,7 @@ export default function Dashboard() {
     }
 
     loadRecentMessages()
-  }, [])
+  }, [user])
 
   const handlePlaySpeech = async (msg: ApprovedMessage) => {
     const textToSpeak = msg.approved_text || msg.literal_text

@@ -41,10 +41,13 @@ app = FastAPI(
 # ── CORS Middleware ───────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,  # Required for HttpOnly cookie auth
-    allow_methods=["*"],
+    allow_origins=settings.all_allowed_origins,
+    allow_origin_regex=r"^https://.*\.vercel\.app$",
+    allow_credentials=True,  # Required for HttpOnly cookie auth and Bearer headers
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
+    expose_headers=["X-Speech-Job-Id", "Content-Disposition", "Content-Length"],
+    max_age=86400,
 )
 
 # ── API Routers ───────────────────────────────────────────────────────────

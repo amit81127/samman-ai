@@ -40,22 +40,56 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # ── CORS ──────────────────────────────────────────────────────────────
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    FRONTEND_URL: Optional[str] = "https://samman-ai.vercel.app"
+    ALLOWED_ORIGINS: List[str] = [
+        "https://samman-ai.vercel.app",
+        "https://samaan-ai.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        base_origins = [
+            "https://samman-ai.vercel.app",
+            "https://samaan-ai.vercel.app",
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ]
+        parsed_origins: List[str] = []
         if isinstance(v, str):
             stripped = v.strip()
             if stripped.startswith("[") and stripped.endswith("]"):
                 try:
                     parsed = json.loads(stripped)
                     if isinstance(parsed, list):
-                        return [str(item).strip() for item in parsed if item]
+                        parsed_origins = [str(item).strip().rstrip("/") for item in parsed if item]
                 except Exception:
                     pass
-            return [origin.strip() for origin in stripped.split(",") if origin.strip()]
-        return v
+            if not parsed_origins:
+                parsed_origins = [origin.strip().rstrip("/") for origin in stripped.split(",") if origin.strip()]
+        elif isinstance(v, list):
+            parsed_origins = [str(item).strip().rstrip("/") for item in v if item]
+
+        combined = list(base_origins)
+        for o in parsed_origins:
+            if o and o not in combined:
+                combined.append(o)
+        return combined
+
+    @property
+    def all_allowed_origins(self) -> List[str]:
+        origins = list(self.ALLOWED_ORIGINS)
+        if self.FRONTEND_URL:
+            clean = self.FRONTEND_URL.strip().rstrip("/")
+            if clean and clean not in origins:
+                origins.append(clean)
+        return origins
 
     # ── Gemini AI & Intelligent Routing ───────────────────────────────────
     GEMINI_API_KEY: str = ""

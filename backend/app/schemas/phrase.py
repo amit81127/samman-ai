@@ -4,7 +4,8 @@ Phrase Schemas
 Pydantic models for saved / favourite phrases.
 """
 
-from typing import Literal, Optional
+from datetime import datetime
+from typing import Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -28,4 +29,4 @@ class PhraseResponse(BaseModel):
     label: Optional[str] = None
     language: str
     source: str
-    created_at: str
+    created_at: Union[str, datetime] = ""

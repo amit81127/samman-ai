@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Mail, KeyRound } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
+import { ArrowRight, Mail, Lock, Globe, Sparkles, CheckCircle2 } from 'lucide-react'
 import Logo from '../components/Logo'
 import { useAuth } from '../store/auth'
 
@@ -15,179 +15,213 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email || !password) {
-      setError('Please provide both email and password')
+    const trimmedEmail = email.trim()
+    const trimmedPass = password.trim()
+
+    if (!trimmedEmail || !trimmedPass) {
+      setError('Please provide both email and password.')
       return
+    }
+
+    if (isRegister) {
+      if (trimmedPass.length < 8) {
+        setError('Password must be at least 8 characters long.')
+        return
+      }
+      if (!/\d/.test(trimmedPass)) {
+        setError('Password must contain at least one number.')
+        return
+      }
     }
 
     setLoading(true)
     setError(null)
+
     try {
       if (isRegister) {
-        await register(email, password, language)
+        await register(trimmedEmail, trimmedPass, language)
       } else {
-        await login(email, password)
+        await login(trimmedEmail, trimmedPass)
       }
       navigate('/dashboard', { replace: true })
     } catch (err: any) {
-      setError(err.message || 'Authentication failed. Please check credentials.')
+      setError(err.message || 'Authentication failed. Please verify your credentials.')
     } finally {
       setLoading(false)
     }
   }
 
+  // Pre-fill demo credentials for instant testing
+  const handleUseDemoAccount = () => {
+    setEmail('demo@samaan.ai')
+    setPassword('DemoUser123')
+    setIsRegister(false)
+    setError(null)
+  }
+
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
-      {/* Left Dark Navy Panel */}
-      <div className="lg:w-1/2 bg-navy px-8 lg:px-16 py-12 flex flex-col justify-between relative overflow-hidden text-white select-none">
-        {/* Top: Logo */}
-        <div className="relative z-10">
-          <Logo dark size="md" />
-        </div>
+    <div className="min-h-screen bg-bg flex flex-col justify-between p-4 sm:p-6 lg:p-8">
+      {/* Top Bar with Logo */}
+      <header className="max-w-6xl w-full mx-auto flex items-center justify-between py-2">
+        <Link to="/" className="inline-block">
+          <Logo size="md" />
+        </Link>
+        <Link
+          to="/"
+          className="text-xs sm:text-sm font-semibold text-text-secondary hover:text-navy transition-colors"
+        >
+          ← Back to home
+        </Link>
+      </header>
 
-        {/* Center: Hero Message */}
-        <div className="my-16 lg:my-auto max-w-lg relative z-10">
-          <p className="text-xs font-bold tracking-widest text-teal uppercase mb-4">
-            A VOICE IS MORE THAN WORDS
-          </p>
-          <h1 className="text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight mb-6">
-            Say what <br />
-            <span className="text-purple">matters.</span>
-          </h1>
-          <p className="text-lg text-[#94A3B8] leading-relaxed">
-            Assistive and Augmentative Communication that meets you where you are.
-          </p>
-        </div>
-
-        {/* Bottom: Inspirational Quote */}
-        <div className="relative z-10">
-          <p className="text-sm italic text-[#94A3B8] leading-relaxed max-w-md">
-            "The most important thing is to give people a way to be heard."
-          </p>
-        </div>
-
-        {/* Decorative Subtle Circles */}
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full border border-white/5 pointer-events-none" />
-        <div className="absolute -bottom-10 -right-10 w-72 h-72 rounded-full border border-white/5 pointer-events-none" />
-      </div>
-
-      {/* Right White Authentication Panel */}
-      <div className="flex-1 bg-surface px-6 sm:px-12 lg:px-20 py-12 flex flex-col justify-center items-center">
-        <div className="w-full max-w-md">
-          {/* Centered SAMAAN AI Logo */}
-          <div className="flex justify-center mb-8">
-            <Logo size="lg" />
-          </div>
-
-          {/* Subheader */}
-          <div className="text-center mb-8">
-            <p className="text-xs font-bold tracking-widest text-teal uppercase mb-1">
-              {isRegister ? 'GET STARTED' : 'WELCOME BACK'}
-            </p>
-            <h2 className="text-3xl font-bold text-navy tracking-tight mb-2">
-              {isRegister ? 'Create your account' : 'Sign in to SAMAAN'}
-            </h2>
-            <p className="text-sm text-text-secondary">
+      {/* Main Centered Authentication Card */}
+      <main className="flex-1 flex items-center justify-center my-6">
+        <div className="w-full max-w-md bg-surface p-7 sm:p-9 rounded-3xl shadow-xl border border-border space-y-6">
+          {/* Header Title */}
+          <div className="text-center space-y-1.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-navy tracking-tight">
+              {isRegister ? 'Create an Account' : 'Welcome Back'}
+            </h1>
+            <p className="text-xs sm:text-sm text-text-secondary">
               {isRegister
-                ? 'Create your personal communicator account.'
-                : 'Enter your credentials to continue.'}
+                ? 'Set up your personal SAMAAN communicator profile'
+                : 'Sign in to access your customized AAC boards & history'}
             </p>
           </div>
 
-          {/* Error Message Box */}
+          {/* Segmented Switcher */}
+          <div className="grid grid-cols-2 p-1 bg-bg rounded-xl border border-border text-xs font-bold text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegister(false)
+                setError(null)
+              }}
+              className={`py-2 rounded-lg transition-all ${!isRegister
+                  ? 'bg-surface text-navy shadow-xs border border-border/50'
+                  : 'text-text-secondary hover:text-navy'
+                }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegister(true)
+                setError(null)
+              }}
+              className={`py-2 rounded-lg transition-all ${isRegister
+                  ? 'bg-surface text-navy shadow-xs border border-border/50'
+                  : 'text-text-secondary hover:text-navy'
+                }`}
+            >
+              Create Account
+            </button>
+          </div>
+
+          {/* Error Banner */}
           {error && (
-            <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 animate-in fade-in">
+            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-600 font-medium animate-in fade-in">
               {error}
             </div>
           )}
 
-          {/* Direct Email + Password Form */}
-          <form onSubmit={handleEmailSubmit} className="space-y-4">
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-navy uppercase tracking-wider mb-1.5">
-                Email address
+              <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1.5">
+                Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                <Mail className="w-4 h-4 text-text-secondary absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="email"
                   required
+                  autoFocus
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@example.com"
-                  className="input pl-10"
+                  placeholder="name@example.com"
+                  className="input pl-10 text-sm"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-navy uppercase tracking-wider mb-1.5">
+              <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1.5">
                 Password
               </label>
               <div className="relative">
-                <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+                <Lock className="w-4 h-4 text-text-secondary absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="input pl-10"
+                  className="input pl-10 text-sm"
                 />
               </div>
+              {isRegister && (
+                <p className="text-[11px] text-text-secondary mt-1.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-teal shrink-0" />
+                  Must be 8+ characters with at least one number.
+                </p>
+              )}
             </div>
 
             {isRegister && (
               <div>
-                <label className="block text-xs font-semibold text-navy uppercase tracking-wider mb-1.5">
-                  Preferred Language
+                <label className="block text-xs font-bold text-navy uppercase tracking-wider mb-1.5">
+                  Default Spoken Language
                 </label>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className="input"
-                >
-                  <option value="en">English</option>
-                  <option value="hi">Hindi (हिंदी)</option>
-                  <option value="kn">Kannada (ಕನ್ನಡ)</option>
-                  <option value="ta">Tamil (தமிழ்)</option>
-                  <option value="te">Telugu (తెలుగు)</option>
-                </select>
+                <div className="relative">
+                  <Globe className="w-4 h-4 text-text-secondary absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <select
+                    value={language}
+                    onChange={(e) => setLanguage(e.target.value)}
+                    className="input pl-10 text-sm"
+                  >
+                    <option value="en">English (Indian Accent)</option>
+                    <option value="hi">Hindi (हिंदी)</option>
+                    <option value="kn">Kannada (ಕನ್ನಡ)</option>
+                    <option value="ta">Tamil (தமிழ்)</option>
+                    <option value="te">Telugu (తెలుగు)</option>
+                  </select>
+                </div>
               </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
-              className="btn-primary w-full justify-center py-3.5 text-base shadow-md shadow-purple/20 mt-2"
+              className="btn-primary w-full justify-center py-3 text-sm shadow-md shadow-purple/20 mt-2 font-bold"
             >
-              {loading
-                ? 'Processing...'
-                : isRegister
-                ? 'Create account'
-                : 'Sign in to account'}
-              {!loading && <ArrowRight className="w-5 h-5 ml-1" />}
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Processing...
+                </span>
+              ) : isRegister ? (
+                <span className="flex items-center gap-1.5">
+                  Create Account <ArrowRight className="w-4 h-4" />
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  Sign In <ArrowRight className="w-4 h-4" />
+                </span>
+              )}
             </button>
-
-            <div className="pt-4 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegister(!isRegister)
-                  setError(null)
-                }}
-                className="text-xs font-semibold text-purple hover:underline"
-              >
-                {isRegister
-                  ? 'Already have an account? Sign in →'
-                  : "Don't have an account yet? Register here →"}
-              </button>
-            </div>
           </form>
+
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="text-center text-xs text-text-secondary py-3">
+        © {new Date().getFullYear()} SAMAAN AI. Assistive & Augmentative Communication Platform.
+      </footer>
     </div>
   )
 }

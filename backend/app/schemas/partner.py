@@ -5,7 +5,7 @@ Pydantic models for delegated access permissions.
 """
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 PartnerPermissionType = Literal["view_boards", "assist_compose", "view_history"]
@@ -28,6 +28,6 @@ class PartnerPermissionResponse(BaseModel):
     partner_email: Optional[str] = None
     relationship: Optional[str] = "Family member"
     permissions: List[str]
-    granted_at: str
-    expires_at: str
+    granted_at: Union[str, datetime] = ""
+    expires_at: Union[str, datetime] = ""
     is_active: bool

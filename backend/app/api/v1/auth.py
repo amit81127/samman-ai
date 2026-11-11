@@ -28,8 +28,8 @@ def _set_auth_cookie(response: Response, token: str) -> None:
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=settings.is_production,       # HTTPS only in production; allows HTTP in local development
-        samesite="lax" if not settings.is_production else "strict",
+        secure=True if settings.is_production else False,
+        samesite="none" if settings.is_production else "lax",
         max_age=COOKIE_MAX_AGE,
         path="/",
     )

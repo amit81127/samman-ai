@@ -6,6 +6,7 @@ export interface User {
   email: string
   language: string
   name?: string
+  access_token?: string
 }
 
 interface AuthContextType {
@@ -26,6 +27,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     async function checkAuth() {
+      // Check if access token exists in localStorage or memory
+      const token = api.getToken()
+      if (!token) {
+        setUser(null)
+        setLoading(false)
+        return
+      }
+
       try {
         const u = await api.get<User>('/auth/me')
         setUser({
@@ -33,6 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: u.email.split('@')[0].replace(/[._]/g, ' '),
         })
       } catch {
+        // Token invalid or expired — clear it safely
+        api.setToken(null)
         setUser(null)
       } finally {
         setLoading(false)
@@ -43,19 +54,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   async function login(email: string, password: string) {
-    const res = await api.post<User>('/auth/login', { email, password })
-    const userObj = {
-      ...res,
+    const res = await api.post<any>('/auth/login', { email, password })
+    if (res?.access_token) {
+      api.setToken(res.access_token)
+    }
+    const userObj: User = {
+      id: String(res.id || res._id),
+      email: res.email,
+      language: res.language || 'en',
       name: res.email.split('@')[0].replace(/[._]/g, ' '),
+      access_token: res.access_token,
     }
     setUser(userObj)
   }
 
   async function register(email: string, password: string, language = 'en') {
-    const res = await api.post<User>('/auth/register', { email, password, language })
-    const userObj = {
-      ...res,
+    const res = await api.post<any>('/auth/register', { email, password, language })
+    if (res?.access_token) {
+      api.setToken(res.access_token)
+    }
+    const userObj: User = {
+      id: String(res.id || res._id),
+      email: res.email,
+      language: res.language || language,
       name: res.email.split('@')[0].replace(/[._]/g, ' '),
+      access_token: res.access_token,
     }
     setUser(userObj)
   }
@@ -64,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.post('/auth/logout')
     } catch {}
+    api.setToken(null)
     setUser(null)
   }
 

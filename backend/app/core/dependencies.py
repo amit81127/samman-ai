@@ -23,22 +23,25 @@ async def get_current_user_id(
 ) -> str:
     """
     Dependency: extracts and validates the user ID from:
-    1. HttpOnly JWT cookie ("access_token")
-    2. Authorization header ("Bearer <token>")
+    1. Authorization header ("Bearer <token>")
+    2. HttpOnly JWT cookie ("access_token")
     Raises 401 if missing, expired, or invalid.
     """
-    token = access_token
-    if not token and authorization:
-        parts = authorization.split()
+    token = None
+    if authorization:
+        parts = authorization.strip().split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             token = parts[1]
-        elif len(parts) == 1:
+        elif len(parts) == 1 and not parts[0].lower().startswith("bearer"):
             token = parts[0]
+    if not token and access_token:
+        token = access_token.strip()
 
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated. Provide session cookie or Authorization Bearer token.",
+            detail={"code": "UNAUTHORIZED", "message": "Not authenticated. Provide Authorization Bearer token or session cookie."},
+            headers={"WWW-Authenticate": "Bearer"},
         )
     try:
         payload = decode_access_token(token)

@@ -74,6 +74,10 @@ export default function Vocabulary() {
 
   // Load boards from backend
   const loadBoards = async () => {
+    if (!api.getToken()) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const data = await api.get<any[]>('/boards')

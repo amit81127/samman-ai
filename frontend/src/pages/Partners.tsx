@@ -31,6 +31,10 @@ export default function Partners() {
 
   // Load partners from backend
   const loadPartners = async () => {
+    if (!api.getToken()) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       const data = await api.get<any[]>('/partners')

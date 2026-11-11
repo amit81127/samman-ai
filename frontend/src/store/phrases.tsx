@@ -42,6 +42,10 @@ export function PhrasesProvider({ children }: { children: ReactNode }) {
   }
 
   const load = useCallback(async () => {
+    if (!api.getToken()) {
+      setPhrases([])
+      return
+    }
     setLoading(true)
     const favIds = new Set(getFavoriteIds())
 

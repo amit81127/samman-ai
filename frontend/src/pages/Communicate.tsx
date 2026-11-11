@@ -70,6 +70,7 @@ export default function Communicate() {
   // 1. Load boards from backend
   useEffect(() => {
     async function fetchBoards() {
+      if (!api.getToken()) return
       try {
         const data = await api.get<any[]>('/boards')
         if (Array.isArray(data) && data.length > 0) {

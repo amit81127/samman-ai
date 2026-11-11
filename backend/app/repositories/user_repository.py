@@ -81,7 +81,11 @@ class UserRepository:
 
     async def get_profile(self, user_id: str) -> dict | None:
         try:
-            return await self._profiles.find_one({"user_id": ObjectId(user_id)})
+            profile = await self._profiles.find_one({"user_id": ObjectId(user_id)})
+            if not profile:
+                await self._create_default_profile(user_id, "en")
+                profile = await self._profiles.find_one({"user_id": ObjectId(user_id)})
+            return profile
         except Exception:
             return None
 
@@ -92,6 +96,7 @@ class UserRepository:
             return await self._profiles.find_one_and_update(
                 {"user_id": ObjectId(user_id)},
                 {"$set": updates},
+                upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
         except Exception:
