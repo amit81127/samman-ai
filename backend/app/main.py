@@ -34,6 +34,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs" if settings.APP_DEBUG else None,
     redoc_url="/redoc" if settings.APP_DEBUG else None,
+    openapi_url="/openapi.json" if settings.APP_DEBUG else None,
     lifespan=lifespan,
 )
 
@@ -53,6 +54,22 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/", tags=["Root"])
 async def root():
     return {"message": "SAMAAN AI API", "version": "1.0.0", "docs": "/docs"}
+
+
+@app.get("/health", tags=["Root"], include_in_schema=False)
+async def root_health():
+    """Operational health check endpoint for cloud platforms (Render, Railway)."""
+    from app.core.database import get_database
+    try:
+        db = get_database()
+        await db.command("ping")
+        return {"status": "healthy", "database": "connected", "version": "1.0.0"}
+    except Exception as exc:
+        return Response(
+            content='{"status":"unhealthy","database":"disconnected"}',
+            status_code=503,
+            media_type="application/json",
+        )
 
 
 @app.get("/metrics", tags=["Monitoring"], include_in_schema=False)

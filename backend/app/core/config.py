@@ -5,8 +5,10 @@ All settings loaded from environment variables via pydantic-settings.
 Add any new env var here as a typed field.
 """
 
+import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Union
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _env_file = Path(__file__).resolve().parent.parent.parent / ".env"
@@ -24,6 +26,7 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
+    PORT: Optional[int] = None
     APP_DEBUG: bool = True
 
     # ── MongoDB ───────────────────────────────────────────────────────────
@@ -38,6 +41,21 @@ class Settings(BaseSettings):
 
     # ── CORS ──────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if item]
+                except Exception:
+                    pass
+            return [origin.strip() for origin in stripped.split(",") if origin.strip()]
+        return v
 
     # ── Gemini AI & Intelligent Routing ───────────────────────────────────
     GEMINI_API_KEY: str = ""

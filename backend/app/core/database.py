@@ -37,7 +37,10 @@ async def connect_to_mongo() -> None:
             _database = _client[settings.DATABASE_NAME]
             logger.info("Connected to MongoDB Atlas: %s", settings.DATABASE_NAME)
             # Create indexes after connection
-            await _create_indexes()
+            try:
+                await _create_indexes()
+            except Exception as idx_exc:
+                logger.warning("MongoDB index creation encountered non-fatal warning: %s", idx_exc)
             return
         except Exception as exc:
             last_exc = exc
