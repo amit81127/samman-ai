@@ -65,11 +65,13 @@ async def compose_message(
 )
 async def list_messages(
     owner_id: str | None = None,
+    limit: int = 20,
+    cursor: str | None = None,
     user_id: str = Depends(get_current_user_id),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
     target_user_id = await _resolve_user_id(owner_id, user_id, db, "view_history")
-    return await _service(db).list_messages(target_user_id)
+    return await _service(db).list_messages(target_user_id, limit=limit, cursor=cursor)
 
 
 @router.get(

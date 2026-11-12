@@ -25,10 +25,12 @@ def _service(db: AsyncIOMotorDatabase) -> PhraseService:
 
 @router.get("", response_model=List[PhraseResponse], summary="List saved phrases")
 async def list_phrases(
+    limit: int = 50,
+    cursor: str | None = None,
     user_id: str = Depends(get_current_user_id),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    return await _service(db).list_phrases(user_id)
+    return await _service(db).list_phrases(user_id, limit=limit, cursor=cursor)
 
 
 @router.post("", response_model=PhraseResponse, status_code=status.HTTP_201_CREATED, summary="Save a phrase")

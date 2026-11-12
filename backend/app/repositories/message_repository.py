@@ -68,22 +68,70 @@ class MessageRepository:
         return _serialize(doc)
 
     async def find_by_id(self, message_id: str, user_id: str) -> Optional[dict]:
-        """Return message only if it belongs to user_id."""
+        """Return message only if it belongs to user_id, using field projection."""
         try:
-            doc = await self._col.find_one({
-                "_id": ObjectId(message_id),
-                "user_id": ObjectId(user_id),
-                "is_deleted": False,
-            })
+            projection = {
+                "selected_concepts": 1,
+                "literal_text": 1,
+                "candidates": 1,
+                "model": 1,
+                "generation": 1,
+                "approved_text": 1,
+                "approval_status": 1,
+                "version": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "user_id": 1,
+            }
+            doc = await self._col.find_one(
+                {
+                    "_id": ObjectId(message_id),
+                    "user_id": ObjectId(user_id),
+                    "is_deleted": False,
+                },
+                projection=projection,
+            )
             return _serialize(doc) if doc else None
         except Exception:
             return None
 
-    async def find_recent(self, user_id: str, limit: int = 20) -> List[dict]:
-        cursor = self._col.find(
-            {"user_id": ObjectId(user_id), "is_deleted": False}
-        ).sort("updated_at", -1).limit(limit)
-        return [_serialize(doc) async for doc in cursor]
+    async def find_recent(
+        self,
+        user_id: str,
+        limit: int = 20,
+        cursor: Optional[str] = None,
+    ) -> List[dict]:
+        """
+        Return recent messages using high-performance cursor-based pagination and projection.
+        Pass cursor (last seen _id string) to fetch next page with zero skip() overhead.
+        """
+        try:
+            query = {"user_id": ObjectId(user_id), "is_deleted": False}
+            if cursor and ObjectId.is_valid(cursor):
+                query["_id"] = {"$lt": ObjectId(cursor)}
+
+            projection = {
+                "selected_concepts": 1,
+                "literal_text": 1,
+                "candidates": 1,
+                "model": 1,
+                "generation": 1,
+                "approved_text": 1,
+                "approval_status": 1,
+                "version": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "user_id": 1,
+            }
+            cursor_res = (
+                self._col.find(query, projection=projection)
+                .sort([("_id", -1)])
+                .limit(limit)
+            )
+            return [_serialize(doc) async for doc in cursor_res]
+        except Exception as exc:
+            logger.error("Error in find_recent: %s", exc)
+            return []
 
     async def approve(
         self,

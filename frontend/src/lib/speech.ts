@@ -5,6 +5,7 @@
  */
 
 import { api } from './api'
+import { telemetry } from './telemetry'
 
 export const GNANI_LANGUAGES = [
   { code: 'en-IN', name: 'English (India)', native: 'English' },
@@ -45,6 +46,68 @@ export function getVoices(): SpeechSynthesisVoice[] {
 // In-memory client-side audio blob cache for instantaneous replay (0ms latency)
 const clientAudioCache = new Map<string, Blob>()
 
+// --- L2 IndexedDB Persistent Audio Cache for Offline AAC ---
+const IDB_NAME = 'samaan_audio_cache_db'
+const IDB_VERSION = 1
+const IDB_STORE = 'audio_blobs'
+
+function openAudioDB(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || !window.indexedDB) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    try {
+      const request = window.indexedDB.open(IDB_NAME, IDB_VERSION)
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE, { keyPath: 'key' })
+        }
+      }
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+async function getAudioBlobFromIDB(key: string): Promise<Blob | null> {
+  const db = await openAudioDB()
+  if (!db) return null
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readonly')
+      const store = tx.objectStore(IDB_STORE)
+      const req = store.get(key)
+      req.onsuccess = () => {
+        if (req.result && req.result.blob) {
+          resolve(req.result.blob as Blob)
+        } else {
+          resolve(null)
+        }
+      }
+      req.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+async function putAudioBlobToIDB(key: string, blob: Blob): Promise<void> {
+  const db = await openAudioDB()
+  if (!db) return
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite')
+      const store = tx.objectStore(IDB_STORE)
+      store.put({ key, blob, timestamp: Date.now() })
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
+    } catch {
+      resolve()
+    }
+  })
+}
+
 export function speakWithBrowser(
   text: string,
   rate = 1,
@@ -55,7 +118,6 @@ export function speakWithBrowser(
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       console.warn('Speech synthesis not supported in this browser')
       resolve()
-      return
     }
 
     window.speechSynthesis.cancel()
@@ -85,23 +147,34 @@ export async function playAudioBlob(blob: Blob): Promise<void> {
     const audioUrl = URL.createObjectURL(blob)
     const audio = new Audio(audioUrl)
 
-    audio.onended = () => {
+    const cleanup = () => {
       URL.revokeObjectURL(audioUrl)
+    }
+
+    audio.onended = () => {
+      cleanup()
       resolve()
     }
     audio.onerror = (err) => {
-      URL.revokeObjectURL(audioUrl)
+      cleanup()
+      telemetry.recordAudioFailure(err)
       reject(err)
     }
 
-    audio.play().catch(reject)
+    audio.play().catch((err) => {
+      cleanup()
+      telemetry.recordAudioFailure(err)
+      reject(err)
+    })
   })
 }
 
 /**
  * Synthesizes speech:
- * 1. Attempts backend Gnani AI Timbre TTS using the chosen voice persona, language, and custom API key.
- * 2. If the backend or Gnani AI is unavailable, gracefully falls back to browser Web Speech API.
+ * 1. Checks L1 in-memory audio blob cache for 0ms replay.
+ * 2. Checks L2 IndexedDB persistent cache for offline instant AAC playback.
+ * 3. Attempts backend Gnani AI Timbre TTS using the chosen voice persona, language, and custom API key.
+ * 4. If the backend or Gnani AI is unavailable, gracefully falls back to browser Web Speech API.
  */
 export async function speakMessage(
   text: string,
@@ -116,8 +189,18 @@ export async function speakMessage(
   const normVoice = voiceName || 'Shivani'
   const cacheKey = `${normText.toLowerCase()}:${normLang}:${normVoice}:${customApiKey || ''}`
 
-  // 0. Check client-side memory cache for instantaneous 0ms playback
-  const cachedBlob = clientAudioCache.get(cacheKey)
+  // 0a. Check client-side L1 memory cache for instantaneous 0ms playback
+  let cachedBlob = clientAudioCache.get(cacheKey)
+
+  // 0b. If L1 misses, check L2 IndexedDB cache
+  if (!cachedBlob) {
+    const idbBlob = await getAudioBlobFromIDB(cacheKey)
+    if (idbBlob) {
+      cachedBlob = idbBlob
+      clientAudioCache.set(cacheKey, idbBlob)
+    }
+  }
+
   if (cachedBlob) {
     try {
       await playAudioBlob(cachedBlob)
@@ -137,12 +220,13 @@ export async function speakMessage(
   if (messageId) {
     try {
       const audioBlob = await api.getAudioBlob(`/messages/${messageId}/speech`, payload)
-      // Cache in client memory (bounded to 150 entries)
+      // Cache in client memory (L1, bounded to 150 entries)
       if (clientAudioCache.size >= 150) {
         const oldest = clientAudioCache.keys().next().value
         if (oldest) clientAudioCache.delete(oldest)
       }
       clientAudioCache.set(cacheKey, audioBlob)
+      putAudioBlobToIDB(cacheKey, audioBlob).catch(() => {})
 
       await playAudioBlob(audioBlob)
       return { source: 'backend' }
@@ -163,6 +247,7 @@ export async function speakMessage(
         if (oldest) clientAudioCache.delete(oldest)
       }
       clientAudioCache.set(cacheKey, audioBlob)
+      putAudioBlobToIDB(cacheKey, audioBlob).catch(() => {})
 
       await playAudioBlob(audioBlob)
       return { source: 'backend' }

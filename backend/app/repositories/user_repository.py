@@ -13,6 +13,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from app.core.cache import cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,8 +30,11 @@ class UserRepository:
     # ── Users ─────────────────────────────────────────────────────────────
 
     async def find_by_email(self, email: str) -> dict | None:
-        """Return full user document (including password_hash) or None."""
-        return await self._users.find_one({"email": email.lower()})
+        """Return user document (including password_hash for authentication) or None."""
+        return await self._users.find_one(
+            {"email": email.lower()},
+            projection={"email": 1, "password_hash": 1, "is_active": 1, "created_at": 1, "updated_at": 1},
+        )
 
     async def find_by_id(self, user_id: str, include_password: bool = False) -> dict | None:
         """Return user document by ObjectId string or None, excluding password_hash by default."""
@@ -80,24 +85,54 @@ class UserRepository:
     # ── Communication Profiles ────────────────────────────────────────────
 
     async def get_profile(self, user_id: str) -> dict | None:
-        try:
-            profile = await self._profiles.find_one({"user_id": ObjectId(user_id)})
-            if not profile:
-                await self._create_default_profile(user_id, "en")
-                profile = await self._profiles.find_one({"user_id": ObjectId(user_id)})
-            return profile
-        except Exception:
-            return None
+        """
+        Fetch user's communication profile using two-level cache (L1 Memory / L2 Disk).
+        If missing in DB, creates default atomically and caches the result.
+        """
+        async def _fetch():
+            uid = ObjectId(user_id)
+            doc = await self._profiles.find_one_and_update(
+                {"user_id": uid},
+                {
+                    "$setOnInsert": {
+                        "user_id": uid,
+                        "language": "en",
+                        "voice_preference": None,
+                        "tile_size": "medium",
+                        "text_size": "normal",
+                        "contrast_mode": False,
+                        "reduced_motion": False,
+                        "updated_at": _utcnow(),
+                    }
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+            if doc is None:
+                return None
+            res = dict(doc)
+            if "_id" in res:
+                res["_id"] = str(res["_id"])
+            if "user_id" in res and isinstance(res["user_id"], ObjectId):
+                res["user_id"] = str(res["user_id"])
+            if "updated_at" in res and isinstance(res["updated_at"], datetime):
+                res["updated_at"] = res["updated_at"].isoformat()
+            return res
+
+        return await cache.cache_get_or_set("profiles", str(user_id), _fetch, ttl=300)
 
     async def update_profile(self, user_id: str, updates: dict) -> dict | None:
-        """Apply partial updates to a user's communication profile in a single atomic roundtrip."""
+        """Apply partial updates to a user's communication profile and invalidate cache."""
         try:
             updates["updated_at"] = _utcnow()
-            return await self._profiles.find_one_and_update(
+            doc = await self._profiles.find_one_and_update(
                 {"user_id": ObjectId(user_id)},
                 {"$set": updates},
                 upsert=True,
                 return_document=ReturnDocument.AFTER,
             )
+            # Invalidate cached profile after update
+            await cache.invalidate_user_profile(user_id)
+            return doc
         except Exception:
             return None

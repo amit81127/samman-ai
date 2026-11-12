@@ -63,17 +63,105 @@ class BoardRepository:
         return _serialize(doc)
 
     async def find_all_by_user(self, user_id: str) -> List[dict]:
-        cursor = self._col.find({"user_id": ObjectId(user_id), "is_active": True})
+        """Fetch all active boards for user with projection and index-covered sorting."""
+        projection = {
+            "name": 1,
+            "description": 1,
+            "is_default": 1,
+            "categories": 1,
+            "created_at": 1,
+            "updated_at": 1,
+            "user_id": 1,
+        }
+        cursor = (
+            self._col.find(
+                {"user_id": ObjectId(user_id), "is_active": True},
+                projection=projection,
+            )
+            .sort([("is_default", -1), ("updated_at", -1)])
+        )
         return [_serialize(doc) async for doc in cursor]
 
-    async def find_by_id(self, board_id: str, user_id: str) -> dict | None:
-        """Find a board only if it belongs to the given user."""
+    async def find_all_with_tile_counts(self, user_id: str) -> List[dict]:
+        """
+        Single-roundtrip aggregation pipeline that fetches all active boards
+        along with their active tile counts using a correlated $lookup sub-pipeline.
+        Eliminates N+1 queries entirely.
+        """
         try:
-            doc = await self._col.find_one({
-                "_id": ObjectId(board_id),
-                "user_id": ObjectId(user_id),
-                "is_active": True,
-            })
+            uid = ObjectId(user_id)
+        except Exception:
+            return []
+
+        pipeline = [
+            {"$match": {"user_id": uid, "is_active": True}},
+            {"$sort": {"is_default": -1, "updated_at": -1}},
+            {
+                "$lookup": {
+                    "from": "vocabulary_items",
+                    "let": {"board_id": "$_id"},
+                    "pipeline": [
+                        {
+                            "$match": {
+                                "$expr": {
+                                    "$and": [
+                                        {"$eq": ["$board_id", "$$board_id"]},
+                                        {"$eq": ["$is_active", True]},
+                                    ]
+                                }
+                            }
+                        },
+                        {"$count": "count"},
+                    ],
+                    "as": "tile_data",
+                }
+            },
+            {
+                "$project": {
+                    "id": {"$toString": "$_id"},
+                    "user_id": {"$toString": "$user_id"},
+                    "name": 1,
+                    "description": 1,
+                    "is_default": 1,
+                    "categories": 1,
+                    "created_at": 1,
+                    "updated_at": 1,
+                    "tile_count": {
+                        "$ifNull": [{"$arrayElemAt": ["$tile_data.count", 0]}, 0]
+                    },
+                }
+            },
+        ]
+        cursor = self._col.aggregate(pipeline)
+        boards = []
+        async for doc in cursor:
+            # Handle datetimes if present
+            for k in ("created_at", "updated_at"):
+                if k in doc and isinstance(doc[k], datetime):
+                    doc[k] = doc[k].isoformat()
+            boards.append(doc)
+        return boards
+
+    async def find_by_id(self, board_id: str, user_id: str) -> dict | None:
+        """Find a board only if it belongs to the given user, using field projection."""
+        try:
+            projection = {
+                "name": 1,
+                "description": 1,
+                "is_default": 1,
+                "categories": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "user_id": 1,
+            }
+            doc = await self._col.find_one(
+                {
+                    "_id": ObjectId(board_id),
+                    "user_id": ObjectId(user_id),
+                    "is_active": True,
+                },
+                projection=projection,
+            )
             return _serialize(doc) if doc else None
         except Exception:
             return None

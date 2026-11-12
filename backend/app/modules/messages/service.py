@@ -6,7 +6,7 @@ Coordinates literal message generation and AI candidate pipeline.
 """
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import HTTPException, status
 
@@ -101,8 +101,8 @@ class MessageService:
             )
         return self._to_response(message)
 
-    async def list_messages(self, user_id: str) -> List[MessageResponse]:
-        messages = await self._messages.find_recent(user_id)
+    async def list_messages(self, user_id: str, limit: int = 20, cursor: Optional[str] = None) -> List[MessageResponse]:
+        messages = await self._messages.find_recent(user_id, limit=limit, cursor=cursor)
         return [self._to_response(m) for m in messages]
 
     def _to_response(self, msg: dict) -> MessageResponse:

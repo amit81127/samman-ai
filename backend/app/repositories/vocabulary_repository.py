@@ -50,22 +50,47 @@ class VocabularyRepository:
         return _serialize(doc)
 
     async def find_by_board(self, board_id: str, user_id: str) -> List[dict]:
-        """Return active tiles for a board, ordered by position."""
+        """Return active tiles for a board, ordered by position with field projection."""
         try:
+            projection = {
+                "board_id": 1,
+                "user_id": 1,
+                "label": 1,
+                "symbol_uri": 1,
+                "category": 1,
+                "position": 1,
+                "color": 1,
+                "is_active": 1,
+            }
             cursor = self._col.find(
                 {"board_id": ObjectId(board_id), "user_id": ObjectId(user_id), "is_active": True},
+                projection=projection,
             ).sort("position", 1)
             return [_serialize(doc) async for doc in cursor]
         except Exception:
             return []
 
     async def find_by_id(self, item_id: str, user_id: str) -> dict | None:
+        """Find a vocabulary item by ID and user with field projection."""
         try:
-            doc = await self._col.find_one({
-                "_id": ObjectId(item_id),
-                "user_id": ObjectId(user_id),
-                "is_active": True,
-            })
+            projection = {
+                "board_id": 1,
+                "user_id": 1,
+                "label": 1,
+                "symbol_uri": 1,
+                "category": 1,
+                "position": 1,
+                "color": 1,
+                "is_active": 1,
+            }
+            doc = await self._col.find_one(
+                {
+                    "_id": ObjectId(item_id),
+                    "user_id": ObjectId(user_id),
+                    "is_active": True,
+                },
+                projection=projection,
+            )
             return _serialize(doc) if doc else None
         except Exception:
             return None

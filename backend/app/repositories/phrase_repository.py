@@ -52,19 +52,59 @@ class PhraseRepository:
         doc["_id"] = result.inserted_id
         return _serialize(doc)
 
-    async def find_all_by_user(self, user_id: str) -> List[dict]:
-        cursor = self._col.find(
-            {"user_id": ObjectId(user_id), "is_active": True}
-        ).sort("created_at", -1)
-        return [_serialize(doc) async for doc in cursor]
+    async def find_all_by_user(
+        self,
+        user_id: str,
+        limit: int = 50,
+        cursor: Optional[str] = None,
+    ) -> List[dict]:
+        """Fetch saved phrases with field projection and cursor-based pagination."""
+        try:
+            query = {"user_id": ObjectId(user_id), "is_active": True}
+            if cursor and ObjectId.is_valid(cursor):
+                query["_id"] = {"$lt": ObjectId(cursor)}
+
+            projection = {
+                "text": 1,
+                "label": 1,
+                "language": 1,
+                "source": 1,
+                "is_active": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "user_id": 1,
+            }
+            cursor_res = (
+                self._col.find(query, projection=projection)
+                .sort([("_id", -1)])
+                .limit(limit)
+            )
+            return [_serialize(doc) async for doc in cursor_res]
+        except Exception as exc:
+            logger.error("Error in find_all_by_user: %s", exc)
+            return []
 
     async def find_by_id(self, phrase_id: str, user_id: str) -> Optional[dict]:
+        """Fetch a specific phrase with field projection."""
         try:
-            doc = await self._col.find_one({
-                "_id": ObjectId(phrase_id),
-                "user_id": ObjectId(user_id),
-                "is_active": True,
-            })
+            projection = {
+                "text": 1,
+                "label": 1,
+                "language": 1,
+                "source": 1,
+                "is_active": 1,
+                "created_at": 1,
+                "updated_at": 1,
+                "user_id": 1,
+            }
+            doc = await self._col.find_one(
+                {
+                    "_id": ObjectId(phrase_id),
+                    "user_id": ObjectId(user_id),
+                    "is_active": True,
+                },
+                projection=projection,
+            )
             return _serialize(doc) if doc else None
         except Exception:
             return None

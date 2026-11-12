@@ -32,6 +32,26 @@ class Settings(BaseSettings):
     # ── MongoDB ───────────────────────────────────────────────────────────
     MONGODB_URI: str
     DATABASE_NAME: str = "samaan_ai"
+    MONGODB_MIN_POOL_SIZE: int = 10
+    MONGODB_MAX_POOL_SIZE: int = 50
+    MONGODB_MAX_IDLE_TIME_MS: int = 45000
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
+    MONGODB_CONNECT_TIMEOUT_MS: int = 5000
+    MONGODB_SOCKET_TIMEOUT_MS: int = 10000
+    MONGODB_WAIT_QUEUE_TIMEOUT_MS: int = 5000
+
+    # ── Cache Configuration (L1 In-Memory + L2 Local Disk) ───────────────
+    CACHE_DIR_PATH: Optional[str] = None
+    CACHE_MAX_MEMORY_BYTES: int = 64 * 1024 * 1024  # 64 MB
+    CACHE_MAX_MEMORY_ENTRIES: int = 5000
+    CACHE_MAX_DISK_BYTES: int = 256 * 1024 * 1024   # 256 MB
+    CACHE_TTL_USER_PROFILES: int = 300              # 5 minutes
+    CACHE_TTL_BOARDS: int = 300                     # 5 minutes
+    CACHE_TTL_PHRASES: int = 300                    # 5 minutes
+    CACHE_TTL_AI_CANDIDATES: int = 3600             # 1 hour
+    CACHE_TTL_TTS_METADATA: int = 3600              # 1 hour
+    CACHE_TTL_TTS_AUDIO: int = 604800               # 7 days
+    CACHE_TTL_APP_DATA: int = 300                   # 5 minutes
 
     # ── Security / JWT ────────────────────────────────────────────────────
     JWT_SECRET_KEY: str
@@ -128,6 +148,13 @@ class Settings(BaseSettings):
     GNANI_DEFAULT_LANGUAGE: str = "en-IN"
     GNANI_DEFAULT_VOICE: str = "Shivani"
     GNANI_DEFAULT_MODEL: str = "timbre-v3.0"
+
+    # ── Background Worker Configuration (No Redis) ────────────────────────
+    WORKER_ENABLED: bool = True
+    WORKER_POLL_INTERVAL_SECONDS: float = 2.0
+    WORKER_LOCK_TIMEOUT_SECONDS: int = 120
+    WORKER_MAX_RETRIES: int = 3
+    WORKER_CONCURRENCY: int = 3
 
     # ── Rate Limiting ─────────────────────────────────────────────────────
     RATE_LIMIT_LOGIN: str = "5/minute"

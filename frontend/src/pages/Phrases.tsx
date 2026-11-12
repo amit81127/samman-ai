@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useDeferredValue, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search,
@@ -22,6 +22,7 @@ export default function Phrases() {
   const navigate = useNavigate()
 
   const [searchQuery, setSearchQuery] = useState('')
+  const deferredSearch = useDeferredValue(searchQuery)
   const [activeFilter, setActiveFilter] = useState<'all' | 'favorites'>('all')
 
   // Form states
@@ -42,16 +43,18 @@ export default function Phrases() {
     load()
   }, [load])
 
-  const filteredPhrases = phrases.filter((p) => {
-    if (activeFilter === 'favorites' && !p.is_favorite) return false
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      const textMatch = p.text.toLowerCase().includes(q)
-      const labelMatch = p.label ? p.label.toLowerCase().includes(q) : false
-      if (!textMatch && !labelMatch) return false
-    }
-    return true
-  })
+  const filteredPhrases = useMemo(() => {
+    return phrases.filter((p) => {
+      if (activeFilter === 'favorites' && !p.is_favorite) return false
+      if (deferredSearch.trim()) {
+        const q = deferredSearch.toLowerCase()
+        const textMatch = p.text.toLowerCase().includes(q)
+        const labelMatch = p.label ? p.label.toLowerCase().includes(q) : false
+        if (!textMatch && !labelMatch) return false
+      }
+      return true
+    })
+  }, [phrases, activeFilter, deferredSearch])
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()

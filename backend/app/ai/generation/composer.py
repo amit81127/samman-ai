@@ -52,61 +52,65 @@ class AIComposer:
             - If AI fails or all models exhausted: returns literal candidate + fallback metadata
         """
         literal = self.build_literal(concepts)
+        clean_lang = language.strip().lower()
+        clean_concepts = [c.strip().lower() for c in concepts]
+        cache_key = f"{clean_lang}:{','.join(clean_concepts)}"
 
-        # 1. Check AI Generation Cache for instant 0ms response
-        cache_key = f"llm:{language.strip().lower()}:{','.join(c.strip().lower() for c in concepts)}"
-        cached = await cache.get(cache_key)
-        if cached is not None:
-            logger.info("AI Candidate Cache HIT for '%s' (0ms)", cache_key)
-            return literal, cached, {
-                "status": "ai_generated",
-                "fallback_used": False,
-                "model": "cache",
-                "reason": "cache_hit",
-            }
+        # 1. Anti-stampede single-flight execution & caching
+        async def _run_ai_pipeline() -> List[dict]:
+            raw_candidates: List[CandidateResult] = []
+            try:
+                raw_candidates = await self._llm.generate_candidates(concepts, language)
+            except Exception as exc:
+                logger.warning("Error calling LLM adapter: %s", exc)
+                raw_candidates = []
 
-        # 2. Attempt AI generation if cache miss
-        raw_candidates: List[CandidateResult] = []
-        try:
-            raw_candidates = await self._llm.generate_candidates(concepts, language)
-        except Exception as exc:
-            logger.warning("Error calling LLM adapter: %s", exc)
-            raw_candidates = []
+            validated: List[dict] = []
+            if raw_candidates:
+                for idx, candidate in enumerate(raw_candidates):
+                    candidate_id = f"c{idx + 1}"
+                    status = self._validate(candidate, concepts)
+                    validated.append({
+                        "candidate_id": candidate_id,
+                        "text": candidate.text,
+                        "validation_status": status,
+                        "requires_clarification": candidate.requires_clarification,
+                        "model": self._llm.model_name,
+                    })
 
-        validated: List[dict] = []
-        if raw_candidates:
-            for idx, candidate in enumerate(raw_candidates):
-                candidate_id = f"c{idx + 1}"
-                status = self._validate(candidate, concepts)
-                validated.append({
-                    "candidate_id": candidate_id,
-                    "text": candidate.text,
-                    "validation_status": status,
-                    "requires_clarification": candidate.requires_clarification,
-                    "model": self._llm.model_name,
-                })
+            passed_candidates = [c for c in validated if c["validation_status"] == "passed"]
+            return validated if passed_candidates else []
 
-        passed_candidates = [c for c in validated if c["validation_status"] == "passed"]
+        # Check two-level cache or execute with anti-stampede lock
+        validated_candidates = await cache.cache_get_or_set(
+            "ai_candidates",
+            cache_key,
+            _run_ai_pipeline,
+            ttl=86400,
+        )
 
-        # 3. If models succeeded and at least one candidate passed validation
+        passed_candidates = [c for c in (validated_candidates or []) if c.get("validation_status") == "passed"]
+
+        # 2. If valid candidates produced
         if passed_candidates:
             logger.info(
-                "AI generation success with model %s: %d/%d candidates passed",
-                self._llm.model_name, len(passed_candidates), len(validated),
+                "AI generation success with %s: %d passed candidates",
+                self._llm.model_name,
+                len(passed_candidates),
             )
-            await cache.set(cache_key, validated, ttl=86400)
-            return literal, validated, {
+            return literal, validated_candidates, {
                 "status": "ai_generated",
                 "fallback_used": False,
                 "model": self._llm.model_name,
                 "reason": "model_success",
             }
 
-        # 4. Critical Safe AAC Fallback: Never return an empty candidate list!
-        reason = "all_models_unavailable" if not raw_candidates else "candidates_failed_validation"
+        # 3. Critical Safe AAC Fallback: Never return an empty candidate list!
+        reason = "all_models_unavailable" if not validated_candidates else "candidates_failed_validation"
         logger.warning(
             "Activating literal fallback for concepts %s (reason: %s).",
-            concepts, reason,
+            concepts,
+            reason,
         )
 
         literal_candidate = {

@@ -17,6 +17,7 @@ from app.api.v1 import (
     phrases,
     partners,
     health,
+    jobs,
 )
 
 api_router = APIRouter()
@@ -40,3 +41,6 @@ api_router.include_router(speech.router, prefix="", tags=["Speech"])
 api_router.include_router(phrases.router, prefix="/phrases", tags=["Phrases"])
 api_router.include_router(partners.router, prefix="/partners", tags=["Partners"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
+
+# Phase 6: Durable Background Jobs & Processing (No Redis)
+api_router.include_router(jobs.router, prefix="/jobs", tags=["Jobs"])

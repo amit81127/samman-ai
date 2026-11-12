@@ -9,6 +9,7 @@ import base64
 import logging
 import os
 import tempfile
+import time
 from typing import Protocol
 
 import httpx
@@ -145,70 +146,78 @@ class GnaniTimbreAdapter:
         """
         resolved_voice = _resolve_voice(voice)
         resolved_lang = _resolve_language(language)
-        model_name = getattr(settings, "GNANI_DEFAULT_MODEL", "timbre-v3.0")
+        cache_key = f"{resolved_lang}:{resolved_voice}:{text.strip().lower()}"
 
-        # 1. High-Speed Audio Cache Lookup (<1ms)
-        cache_key = f"tts:{resolved_lang}:{resolved_voice}:{text.strip().lower()}"
-        cached_audio = await cache.get_bytes(cache_key)
-        if cached_audio:
-            logger.info("Gnani TTS Audio Cache HIT for '%s' (0ms, %d bytes)", text[:30], len(cached_audio))
-            return cached_audio
-
-        request_body = {
-            "text": text,
-            "voice": resolved_voice,
-            "model": model_name,
-            "language": resolved_lang,
-            "speed": 1.0,
-            "audio_config": {
-                "sample_rate": 22050,
-                "num_channels": 1,
-                "sample_width": 2,
-                "encoding": "linear_pcm",
-                "container": "wav",
-            },
-        }
-
-        headers = None
-        if api_key and api_key.strip():
-            headers = {
-                "X-API-Key-ID": api_key.strip(),
-                "Content-Type": "application/json",
+        async def _synthesize_upstream() -> bytes:
+            start_time = time.perf_counter()
+            model_name = getattr(settings, "GNANI_DEFAULT_MODEL", "timbre-v3.0")
+            request_body = {
+                "text": text,
+                "voice": resolved_voice,
+                "model": model_name,
+                "language": resolved_lang,
+                "speed": 1.0,
+                "audio_config": {
+                    "sample_rate": 22050,
+                    "num_channels": 1,
+                    "sample_width": 2,
+                    "encoding": "linear_pcm",
+                    "container": "wav",
+                },
             }
 
-        client = get_gnani_tts_client()
-        try:
-            response = await client.post("/inference", json=request_body, headers=headers)
+            headers = None
+            if api_key and api_key.strip():
+                headers = {
+                    "X-API-Key-ID": api_key.strip(),
+                    "Content-Type": "application/json",
+                }
 
-            if response.status_code == 200:
-                audio_bytes = None
-                content_type = response.headers.get("content-type", "")
-                if "audio" in content_type:
-                    audio_bytes = response.content
-                else:
-                    data = response.json()
-                    if "audio_data" in data:
-                        audio_bytes = base64.b64decode(data["audio_data"])
-                    elif isinstance(data, dict) and "data" in data and isinstance(data["data"], str):
-                        audio_bytes = base64.b64decode(data["data"])
-                    else:
-                        logger.warning("Unexpected Gnani response JSON structure: %s", list(data.keys()) if isinstance(data, dict) else type(data))
-
-                if audio_bytes:
-                    # Cache audio bytes for 7 days
-                    await cache.set_bytes(cache_key, audio_bytes, ttl=604800)
-                    return audio_bytes
-            else:
-                logger.error(
-                    "Gnani TTS returned error status %d: %s",
+            client = get_gnani_tts_client()
+            try:
+                response = await client.post("/inference", json=request_body, headers=headers)
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.info(
+                    "Gnani Timbre TTS provider call completed in %.2fms (status %d)",
+                    latency_ms,
                     response.status_code,
-                    response.text[:300],
                 )
 
-        except (httpx.TimeoutException, httpx.RequestError) as exc:
-            logger.warning("Gnani Timbre API request error (%s): %s. Attempting fallback.", type(exc).__name__, exc)
-        except Exception as exc:
-            logger.warning("Unexpected Gnani TTS exception: %s. Attempting fallback.", exc)
+                if response.status_code == 200:
+                    content_type = response.headers.get("content-type", "")
+                    if "audio" in content_type:
+                        return response.content
 
-        # Fallback to local audio engine so users are never blocked from speech
-        return _synthesize_local_fallback(text)
+                    data = response.json()
+                    if "audio_data" in data:
+                        return base64.b64decode(data["audio_data"])
+                    elif isinstance(data, dict) and "data" in data and isinstance(data["data"], str):
+                        return base64.b64decode(data["data"])
+                    else:
+                        logger.warning(
+                            "Unexpected Gnani response JSON structure: %s",
+                            list(data.keys()) if isinstance(data, dict) else type(data),
+                        )
+                else:
+                    logger.error(
+                        "Gnani TTS returned error status %d: %s",
+                        response.status_code,
+                        response.text[:300],
+                    )
+
+            except (httpx.TimeoutException, httpx.RequestError) as exc:
+                latency_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.warning(
+                    "Gnani Timbre API request error (%s) after %.2fms: %s. Attempting fallback.",
+                    type(exc).__name__,
+                    latency_ms,
+                    exc,
+                )
+            except Exception as exc:
+                logger.warning("Unexpected Gnani TTS exception: %s. Attempting fallback.", exc)
+
+            # Fallback to local audio engine so users are never blocked from speech
+            return _synthesize_local_fallback(text)
+
+        # Single-flight anti-stampede caching with 7-day TTL (L1 RAM + L2 Disk)
+        return await cache.cache_get_or_set("tts_audio", cache_key, _synthesize_upstream, ttl=604800)

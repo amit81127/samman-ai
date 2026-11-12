@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Undo2,
@@ -281,7 +281,10 @@ export default function Communicate() {
     } catch {}
   }
 
-  const currentCategoryTiles = vocabTiles.filter((v) => v.category === activeCategory)
+  const currentCategoryTiles = useMemo(
+    () => vocabTiles.filter((v) => v.category === activeCategory),
+    [vocabTiles, activeCategory]
+  )
   const stepIndex = STEPS.indexOf(step)
 
   return (

@@ -7,6 +7,7 @@ Business logic for vocabulary tile management.
 from typing import List
 from fastapi import HTTPException, status
 
+from app.core.cache import cache
 from app.repositories.board_repository import BoardRepository
 from app.repositories.vocabulary_repository import VocabularyRepository
 from app.schemas.vocabulary import VocabItemCreate, VocabItemUpdate, VocabItemResponse
@@ -42,6 +43,7 @@ class VocabularyService:
     async def create_item(self, board_id: str, user_id: str, data: VocabItemCreate) -> VocabItemResponse:
         await self._verify_board_ownership(board_id, user_id)
         item = await self._vocab.create(board_id, user_id, data.model_dump())
+        await cache.invalidate_user_boards(user_id)
         return VocabItemResponse(**item)
 
     async def update_item(self, item_id: str, user_id: str, data: VocabItemUpdate) -> VocabItemResponse:
@@ -52,6 +54,7 @@ class VocabularyService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "RESOURCE_NOT_FOUND", "message": "Vocabulary item not found"},
             )
+        await cache.invalidate_user_boards(user_id)
         return VocabItemResponse(**item)
 
     async def delete_item(self, item_id: str, user_id: str) -> None:
@@ -61,3 +64,4 @@ class VocabularyService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"code": "RESOURCE_NOT_FOUND", "message": "Vocabulary item not found"},
             )
+        await cache.invalidate_user_boards(user_id)

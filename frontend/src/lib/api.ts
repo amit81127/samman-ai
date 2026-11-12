@@ -4,6 +4,8 @@
  * Supports both Cross-Origin Bearer Token Authentication and HttpOnly Cookies
  */
 
+import { telemetry } from './telemetry'
+
 const TOKEN_KEY = 'samaan_access_token'
 
 let inMemoryToken: string | null = null
@@ -40,6 +42,29 @@ interface RequestOptions {
   method?: string
   body?: unknown
   headers?: Record<string, string>
+  signal?: AbortSignal
+  skipCache?: boolean
+}
+
+// Client-side query cache (5 min staleTime, 30 min gcTime)
+interface CacheEntry<T> {
+  data: T
+  expiresAt: number
+}
+
+const queryCache = new Map<string, CacheEntry<any>>()
+const inFlightRequests = new Map<string, Promise<any>>()
+
+export function invalidateCache(prefix?: string) {
+  if (!prefix) {
+    queryCache.clear()
+    return
+  }
+  for (const key of queryCache.keys()) {
+    if (key.includes(prefix)) {
+      queryCache.delete(key)
+    }
+  }
 }
 
 function resolveUrl(path: string): string {
@@ -80,7 +105,23 @@ function formatErrorMessage(status: number, data: any): string {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {} } = options
+  const { method = 'GET', body, headers = {}, signal, skipCache = false } = options
+  const upperMethod = method.toUpperCase()
+  const cacheKey = `${upperMethod}:${path}`
+
+  // 1. Client-Side Read Cache for GET requests (5-minute TTL)
+  if (upperMethod === 'GET' && !skipCache) {
+    const cached = queryCache.get(cacheKey)
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.data as T
+    }
+
+    // Single-Flight Deduplication for identical in-flight GET requests
+    const inFlight = inFlightRequests.get(cacheKey)
+    if (inFlight) {
+      return (await inFlight) as T
+    }
+  }
 
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   const requestHeaders: Record<string, string> = { ...headers }
@@ -94,49 +135,96 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     requestHeaders['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(resolveUrl(path), {
-    method,
-    credentials: 'include',
-    headers: requestHeaders,
-    body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
-  })
+  const fetchPromise = (async () => {
+    const startMs = performance.now()
+    try {
+      const response = await fetch(resolveUrl(path), {
+        method: upperMethod,
+        credentials: 'include',
+        headers: requestHeaders,
+        signal,
+        body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
+      })
 
-  if (response.status === 204) {
-    return undefined as unknown as T
+      if (response.status === 204) {
+        telemetry.recordApiRequest(performance.now() - startMs, true)
+        return undefined as unknown as T
+      }
+
+      let data: any
+      const contentType = response.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        data = await response.json().catch(() => null)
+      } else {
+        data = await response.text().catch(() => null)
+      }
+
+      // Handle 401 Unauthorized by clearing stale token (except on login/register endpoints)
+      if (response.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/register')) {
+        setAuthToken(null)
+      }
+
+      if (!response.ok) {
+        telemetry.recordApiRequest(performance.now() - startMs, false)
+        const errorMsg = formatErrorMessage(response.status, data)
+        const error = new Error(errorMsg)
+        ;(error as any).status = response.status
+        ;(error as any).data = data
+        throw error
+      }
+
+      telemetry.recordApiRequest(performance.now() - startMs, true)
+
+      // Cache successful GET responses for 5 minutes
+      if (upperMethod === 'GET' && !skipCache) {
+        queryCache.set(cacheKey, {
+          data,
+          expiresAt: Date.now() + 5 * 60 * 1000,
+        })
+      } else if (upperMethod !== 'GET') {
+        // Invalidate relevant query cache on mutations
+        if (path.includes('/boards')) invalidateCache('/boards')
+        if (path.includes('/phrases')) invalidateCache('/phrases')
+        if (path.includes('/vocabulary')) {
+          invalidateCache('/vocabulary')
+          invalidateCache('/boards')
+        }
+        if (path.includes('/users') || path.includes('/profile')) invalidateCache('/users')
+        if (path.includes('/partners')) invalidateCache('/partners')
+      }
+
+      return data as T
+    } catch (err) {
+      telemetry.recordApiRequest(performance.now() - startMs, false)
+      throw err
+    }
+  })()
+
+  if (upperMethod === 'GET' && !skipCache) {
+    inFlightRequests.set(cacheKey, fetchPromise)
+    try {
+      return await fetchPromise
+    } finally {
+      inFlightRequests.delete(cacheKey)
+    }
   }
 
-  let data: any
-  const contentType = response.headers.get('content-type') || ''
-  if (contentType.includes('application/json')) {
-    data = await response.json().catch(() => null)
-  } else {
-    data = await response.text().catch(() => null)
-  }
-
-  // Handle 401 Unauthorized by clearing stale token (except on login/register endpoints)
-  if (response.status === 401 && !path.includes('/auth/login') && !path.includes('/auth/register')) {
-    setAuthToken(null)
-  }
-
-  if (!response.ok) {
-    const errorMsg = formatErrorMessage(response.status, data)
-    const error = new Error(errorMsg)
-    ;(error as any).status = response.status
-    ;(error as any).data = data
-    throw error
-  }
-
-  return data as T
+  return await fetchPromise
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path, { method: 'GET' }),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
-  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  get: <T>(path: string, options?: { signal?: AbortSignal; skipCache?: boolean }) =>
+    request<T>(path, { method: 'GET', ...options }),
+  post: <T>(path: string, body?: unknown, options?: { signal?: AbortSignal }) =>
+    request<T>(path, { method: 'POST', body, ...options }),
+  patch: <T>(path: string, body?: unknown, options?: { signal?: AbortSignal }) =>
+    request<T>(path, { method: 'PATCH', body, ...options }),
+  delete: <T>(path: string, options?: { signal?: AbortSignal }) =>
+    request<T>(path, { method: 'DELETE', ...options }),
 
   setToken: setAuthToken,
   getToken: getAuthToken,
+  invalidate: invalidateCache,
 
   /** For speech synthesis endpoint which returns audio/wav */
   getAudioBlob: async (path: string, body?: unknown): Promise<Blob> => {

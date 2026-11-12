@@ -22,15 +22,30 @@ _database: AsyncIOMotorDatabase | None = None
 async def connect_to_mongo() -> None:
     """Create MongoDB connection on application startup with retry resilience."""
     global _client, _database
+
+    # Configure DNS resolver with reliable nameservers to prevent SRV lookup timeouts on Windows
+    try:
+        import dns.resolver
+        dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
+        dns.resolver.default_resolver.nameservers = ["8.8.8.8", "1.1.1.1", "8.8.4.4"]
+        dns.resolver.default_resolver.lifetime = 12.0
+        dns.resolver.default_resolver.timeout = 6.0
+    except Exception:
+        pass
+
     last_exc = None
     for attempt in range(1, 4):
         try:
             logger.info("Connecting to MongoDB Atlas (attempt %d/3)...", attempt)
             _client = AsyncIOMotorClient(
                 settings.MONGODB_URI,
-                serverSelectionTimeoutMS=20000,
-                connectTimeoutMS=15000,
-                socketTimeoutMS=20000,
+                minPoolSize=settings.MONGODB_MIN_POOL_SIZE,
+                maxPoolSize=settings.MONGODB_MAX_POOL_SIZE,
+                maxIdleTimeMS=settings.MONGODB_MAX_IDLE_TIME_MS,
+                serverSelectionTimeoutMS=settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+                connectTimeoutMS=settings.MONGODB_CONNECT_TIMEOUT_MS,
+                socketTimeoutMS=settings.MONGODB_SOCKET_TIMEOUT_MS,
+                waitQueueTimeoutMS=settings.MONGODB_WAIT_QUEUE_TIMEOUT_MS,
             )
             # Verify connection
             await _client.admin.command("ping")
@@ -81,10 +96,18 @@ async def _create_indexes() -> None:
     # communication_profiles — fast 1:1 lookup by user_id
     await db.communication_profiles.create_index([("user_id", ASCENDING)], unique=True)
 
-    # boards — fast lookup by owner and active status
+    # boards — fast lookup and index-covered sorting for owner boards
+    await db.boards.create_index(
+        [
+            ("user_id", ASCENDING),
+            ("is_active", ASCENDING),
+            ("is_default", DESCENDING),
+            ("updated_at", DESCENDING),
+        ]
+    )
     await db.boards.create_index([("user_id", ASCENDING), ("is_active", ASCENDING)])
 
-    # vocabulary_items — compound index for tile retrieval, sorting and aggregation
+    # vocabulary_items — compound index for tile retrieval, sorting, and batch counting
     await db.vocabulary_items.create_index(
         [
             ("board_id", ASCENDING),
@@ -94,15 +117,21 @@ async def _create_indexes() -> None:
         ]
     )
     await db.vocabulary_items.create_index(
-        [("user_id", ASCENDING), ("is_active", ASCENDING)]
+        [("user_id", ASCENDING), ("is_active", ASCENDING), ("board_id", ASCENDING)]
     )
 
-    # messages — compound index for history by user, ignoring deleted
+    # messages — compound indexes for history and cursor-based pagination
+    await db.messages.create_index(
+        [("user_id", ASCENDING), ("is_deleted", ASCENDING), ("_id", DESCENDING)]
+    )
     await db.messages.create_index(
         [("user_id", ASCENDING), ("is_deleted", ASCENDING), ("updated_at", DESCENDING)]
     )
 
-    # phrases — compound index for active phrases sorted newest first
+    # phrases — compound indexes for active phrases and cursor-based pagination
+    await db.phrases.create_index(
+        [("user_id", ASCENDING), ("is_active", ASCENDING), ("_id", DESCENDING)]
+    )
     await db.phrases.create_index(
         [("user_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)]
     )
@@ -130,5 +159,30 @@ async def _create_indexes() -> None:
     await db.speech_jobs.create_index(
         [("user_id", ASCENDING), ("created_at", DESCENDING)]
     )
+
+    # background_jobs — queue polling, user tracking, and unique idempotency
+    await db.background_jobs.create_index(
+        [("status", ASCENDING), ("scheduled_at", ASCENDING), ("locked_at", ASCENDING)]
+    )
+    await db.background_jobs.create_index(
+        [("user_id", ASCENDING), ("created_at", DESCENDING)]
+    )
+    try:
+        await db.background_jobs.create_index(
+            [("idempotency_key", ASCENDING)],
+            unique=True,
+            partialFilterExpression={"idempotency_key": {"$type": "string"}},
+        )
+    except Exception as exc:
+        if "IndexKeySpecsConflict" in str(exc) or "86" in str(exc):
+            try:
+                await db.background_jobs.drop_index("idempotency_key_1")
+                await db.background_jobs.create_index(
+                    [("idempotency_key", ASCENDING)],
+                    unique=True,
+                    partialFilterExpression={"idempotency_key": {"$type": "string"}},
+                )
+            except Exception:
+                pass
 
     logger.info("MongoDB indexes verified/created")
