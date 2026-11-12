@@ -1,4 +1,7 @@
 {
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "headers": [
     {
       "source": "/assets/(.*)",
@@ -43,9 +46,8 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|favicon.ico|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]
 }
-

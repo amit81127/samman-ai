@@ -17,10 +17,8 @@ from app.core.logging import setup_logging
 from app.integrations.gnani.client import close_gnani_clients
 from app.api.v1.router import api_router
 from app.integrations.llm.metrics import llm_metrics
-from app.middleware.http_performance import (
-    HTTPPerformanceMiddleware,
-    SelectiveGZipMiddleware,
-)
+from starlette.middleware.gzip import GZipMiddleware
+from app.middleware.http_performance import HTTPPerformanceMiddleware
 
 
 @asynccontextmanager
@@ -66,15 +64,15 @@ app = FastAPI(
 )
 
 # ── HTTP Performance & Compression Middleware ─────────────────────────────
-# 1. Innermost: Selective GZip Compression (level 5, min 500 bytes, skips audio/images)
-app.add_middleware(
-    SelectiveGZipMiddleware,
-    minimum_size=500,
-    compresslevel=5,
-)
-
-# 2. Middle: HTTP Timing, Structured Logging & Cache Control Headers
+# 1. Innermost: HTTP Timing, Structured Logging, Cache-Control & Safe Media Tagging
 app.add_middleware(HTTPPerformanceMiddleware)
+
+# 2. Middle: Starlette Production-Safe GZip Compression (level 6, min 500 bytes)
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=500,
+    compresslevel=6,
+)
 
 # 3. Outermost: CORS Handling (handles preflights immediately, wraps all outgoing responses)
 app.add_middleware(

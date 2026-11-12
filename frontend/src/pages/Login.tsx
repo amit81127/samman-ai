@@ -10,7 +10,6 @@ import {
   Eye,
   EyeOff,
   ShieldCheck,
-  UserCheck,
 } from 'lucide-react'
 import Logo from '../components/Logo'
 import { useAuth } from '../store/auth'
@@ -65,13 +64,7 @@ export default function Login() {
     }
   }
 
-  // Pre-fill demo credentials for instant 1-tap testing
-  const handleUseDemoAccount = () => {
-    setEmail('demo@samaan.ai')
-    setPassword('DemoUser123')
-    setIsRegister(false)
-    setError(null)
-  }
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-bg via-white to-purple-light/20 flex flex-col justify-between p-4 sm:p-6 lg:p-8 font-sans text-navy">
@@ -249,18 +242,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {/* Quick Guest Communicator Access */}
-          <div className="pt-4 border-t border-border/80 text-center">
-            <p className="text-xs text-text-secondary mb-2">Want to try the speech communicator without an account?</p>
-            <button
-              type="button"
-              onClick={() => navigate('/communicate')}
-              className="text-xs font-bold text-purple hover:text-purple-dark inline-flex items-center gap-1 hover:underline"
-            >
-              Launch Guest Communicator <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
       </main>
 
